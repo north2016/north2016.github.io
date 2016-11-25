@@ -236,6 +236,344 @@
   
 
   <article class="post post-type-normal " itemscope itemtype="http://schema.org/Article">
+  <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/11/25/安卓AOP实战-Javassist强撸EventBus/">
+
+  <span style="display:none" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <meta itemprop="name" content="John Doe">
+    <meta itemprop="description" content="">
+    <meta itemprop="image" content="/images/avatar.gif">
+  </span>
+
+  <span style="display:none" itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+    <meta itemprop="name" content="Hexo">
+    <span style="display:none" itemprop="logo" itemscope itemtype="http://schema.org/ImageObject">
+      <img style="display:none;" itemprop="url image" alt="Hexo" src="">
+    </span>
+  </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+            
+            
+              
+                
+                <a class="post-title-link" href="/2016/11/25/安卓AOP实战-Javassist强撸EventBus/" itemprop="url">
+                  安卓AOP实战:Javassist强撸EventBus
+                </a>
+              
+            
+          </h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">Veröffentlicht am</span>
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-11-25T16:36:47+08:00">
+                2016-11-25
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p>####前言</p>
+<blockquote>
+<p>EventBus到了3.0版本,使用Apt注解处理器来在编译期通过读取@Subscribe()注解并解析生成java类来保存订阅者关于的信息,比在之前使用反射来获得这些订阅者的信息速度要快。但是事件触发依然是使用method.invoke来调用。纵观EventBus的源码，还是有大量使用反射的地方。</p>
+<p>然而，尽管反射非常强大，但也不能随意大量使用。如果一个功能可以不用反射完成，那么最好就不用。由于反射允许代码执行一些在正常情况下不被允许的操作（比如访问私有的属性和方法），所以使用反射可能会导致意料之外的副作用，使用反射相对来说不安全 －－代码有功能上的错误，降低可移植性。反射代码破坏了类的封装性抽象性，因此当平台发生改变的时候，代码的行为就有可能也随着变化。而且使用反射的性能较低。</p>
+<p>反射这个异教徒，并不属于OOP的范畴，简直就是代码界的IS，强行蹂躏对象，破坏原有结构，对面向对象的世界观进行残(危)酷(言)肢(耸)解(听)。好了，进入正题：</p>
+</blockquote>
+<p>我眼中EventBus的缺点：<br>一，不够简洁：需要手写大量register和unregister的垃圾代码，这对我来说是致命的缺点<br>二、不够高效：虽然用了Apt和METHOD_CACHE来优化了反射，单仍然不够完美理想化<br>三、不够专注：事件传递的框架，就不需要关心线程切换什么的吧，你这么牛逼RxJava知道吗</p>
+<p>好了，话不多说，开车。</p>
+<p>先看效果：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-289f1cc1d9eec04c.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="OkBus"></p>
+<p>对，没错，触发事件一句代码：</p>
+<figure class="highlight plain"><figcaption><span>null);```</span></figcaption><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line"></div><div class="line">接收事件一句代码</div><div class="line"></div><div class="line">```@Bus(tag = EventTags.JUMP_TO_MAIN)</div></pre></td></tr></table></figure>
+<p>支持粘连事件(先触发后注册)</p>
+<p><code>OkBus.getInstance().onStickyEvent(EventTags.FLASH_INIT_UI, null);</code></p>
+<p>什么？注册和反注册？这些代码全部都是插件自动生成，不用再手动写啦！</p>
+<p>Javassist在编译期间通过插件，已经帮你自动生成注册、反注册、事件分发的代码并且帮你加上啦！如果没有这样的方法，会自动生成并加上，如果本来就有，就更简单了，直接在方法里面追加就可以了。</p>
+<p>来看build/intermediates/transforms下的源代码<br><img src="http://upload-images.jianshu.io/upload_images/751860-300eeffdcbec502f.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="transforms下的源代码"></p>
+<p>Activity(Fragment)有onCreate(onActivityCreated)，onDestroy可以自动加，想在别的地方用怎么办？</p>
+<p>请看Presenter中用法：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-41ed0441d599b77e.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="Presenter中用法"></p>
+<p>即使没有那样的时机让插件自动插入，那只要吱个声(加个注解)，插件也会自己自动帮你加。</p>
+<p>添加后的代码：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-26edcbdbdbba5d92.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="自动插入后的代码"></p>
+<p>需要在哪个方法里注册就加上@BusRegister注解，反注册就加@BusUnRegister，现在你可以在任何地方使用了。</p>
+<p>那要是忘加注解了怎么办？</p>
+<p>别急，插件依然会在编译期间提醒你：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-e943e6e54b779459.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="非正常使用会报错"></p>
+<p>所有一切都是编译期间所做的，零反射零代理。实现的方式，不过一类，一插件，一注解，百余行代码而已。</p>
+<p>##1、OkBus类</p>
+<p>######OkBus属性：</p>
+<p>主要就是基本信息的存储和单例的实现</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-d2dfdf8e4df48d35.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="OkBus属性"></p>
+<p>######OkBus  register方法：<br>注册的时候放入回调列表，如果是粘连事件，注册时就去已分发的粘连事件库存去拿参数并触发回调。</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-b6a6e502a9b0b001.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="OkBus  register方法"></p>
+<p>######OkBus反注册和触发事件方法：<br>反注册就直接remove回调，触发时分普通事件和粘连事件，粘连事件就存库里备用</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-09f8be2a4b937665.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="OkBus反注册和触发事件方法"><br>OK，以上就是全部代码。这里直接用回调实现事件通知，没有什么复杂的逻辑，现在考虑的情况也比较简单</p>
+<p>##2、插件代码<br>剩下的都是插件代码：</p>
+<p>######BusInfo类：<br>存储事件的相关的信息，便于生成代码逻辑：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-d2ab5f0d4312de33.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="BusInfo类"></p>
+<p>  ######transform操作<br>然后在transform中，根据源代码创建BusInfo，处理BusInfo、利用BusHelper操作源代码进行方法和代码的插入，</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-3eb4872c5627dee7.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="在transform中，根据源代码创建BusInfo，BusHelper处理BusInfo"></p>
+<p>  ######BusHelper生成代码<br>BusHelper里面有一些模版代码：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-663fae968d414c09.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="模版代码"></p>
+<p>处理BusInfo：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-492f03970a06f056.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="处理BusInfo"></p>
+<p> 获取初始化OkBus方法的代码<br><img src="http://upload-images.jianshu.io/upload_images/751860-73427f42ee83236c.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt=" 获取初始化OkBus方法的代码"></p>
+<p>生成event事件分发的逻辑代码<br><img src="http://upload-images.jianshu.io/upload_images/751860-7919c1b6c459fe0f.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="生成event事件分发的逻辑代码"></p>
+<p>生成取消事件注册的代码<br><img src="http://upload-images.jianshu.io/upload_images/751860-2c3ca6cb3e9bf93c.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="生成取消事件注册的代码"></p>
+<p>Ok，以上便是全部代码，百十行而已(Log占了一大部分)，Gradle插件虽然是使用用groovy，我真的完全没看过任何博客学过groovy，因为groovy完全兼容java，闭着眼睛当java写好像并没有什么不对(不要喷我，，，)。</p>
+<p>Javassist实现逻辑插入的部分，说高深点叫操作修改字节码，说简单点就是字符串拼接，插入代码或者方法。相比ASM，真的太适合java开发者来使用了。</p>
+<p>以上代码在<a href="https://github.com/north2016/T-MVP" target="_blank" rel="external">T-MVP</a>可以看到，TMVP本来想做成库，现在已经彻底沦为实验室，欢迎各位客官前来把玩。</p>
+<p>OK，车已到站，下车请刷卡</p>
+
+          
+        
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal " itemscope itemtype="http://schema.org/Article">
+  <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/11/25/安卓AOP三剑客-APT-AspectJ-Javassist/">
+
+  <span style="display:none" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <meta itemprop="name" content="John Doe">
+    <meta itemprop="description" content="">
+    <meta itemprop="image" content="/images/avatar.gif">
+  </span>
+
+  <span style="display:none" itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+    <meta itemprop="name" content="Hexo">
+    <span style="display:none" itemprop="logo" itemscope itemtype="http://schema.org/ImageObject">
+      <img style="display:none;" itemprop="url image" alt="Hexo" src="">
+    </span>
+  </span>
+
+    
+      <header class="post-header">
+
+        
+        
+          <h1 class="post-title" itemprop="name headline">
+            
+            
+              
+                
+                <a class="post-title-link" href="/2016/11/25/安卓AOP三剑客-APT-AspectJ-Javassist/" itemprop="url">
+                  安卓AOP三剑客:APT,AspectJ,Javassist
+                </a>
+              
+            
+          </h1>
+        
+
+        <div class="post-meta">
+          <span class="post-time">
+            
+              <span class="post-meta-item-icon">
+                <i class="fa fa-calendar-o"></i>
+              </span>
+              <span class="post-meta-item-text">Veröffentlicht am</span>
+              <time title="Post created" itemprop="dateCreated datePublished" datetime="2016-11-25T16:36:02+08:00">
+                2016-11-25
+              </time>
+            
+
+            
+
+            
+          </span>
+
+          
+
+          
+            
+          
+
+          
+
+          
+          
+
+          
+
+          
+
+        </div>
+      </header>
+    
+
+
+    <div class="post-body" itemprop="articleBody">
+
+      
+      
+
+      
+        
+          
+            <p>AOP:面向切面编程(Aspect-Oriented Programming)。如果说，OOP如果是把问题划分到单个模块的话，那么AOP就是把涉及到众多模块的某一类问题进行统一管理。</p>
+<p>Android AOP就是通过预编译方式和运行期动态代理实现程序功能的统一维护的一种技术。利用AOP可以对业务逻辑的各个部分进行隔离，从而使得业务逻辑各部分之间的耦合度降低，提高程序的可重用性，提高开发效率。本文仅做知识介绍，相关详细内容不做过多描述，全部代码在项目<a href="https://github.com/north2016/T-MVP" target="_blank" rel="external">T-MVP</a>。</p>
+<p>话不多说，先上图：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-0641778f0bc265ad.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="APT,AspectJ,Javassist对应的编译时期"></p>
+<p>AOP在Java后台，已经被各路大神研发出各种框架风生水起，例如SSH、SpringMVC等等殿堂级框架。在Android端，近年来也是异军突起。</p>
+<p>#APT</p>
+<p>代表框架：Dagger2, ButterKnife, EventBus3 、DBFlow、AndroidAnnotation</p>
+<p>注解处理器 Java5 中叫APT(Annotation Processing Tool)，在Java6开始，规范化为 Pluggable Annotation Processing。Apt应该是这其中我们最常见到的了，难度也最低。定义编译期的注解，再通过继承Proccesor实现代码生成逻辑，实现了编译期生成代码的逻辑。</p>
+<p>使用姿势  ：<br>1、建立一个java的Module,写一个继承AbstractProcessor的类</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-a8354794eecb4487.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="AbstractProcessor"></p>
+<p>2、在工具类里处理我们自定义的注解、生成代码：</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-96b09bef51da7f14.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="Processor"></p>
+<p>3、在Gradle中添加 dependencies   annotationProcessor project(‘:apt’)<br>低版本需要使用第三方插件  apply plugin: ‘com.neenbedankt.android-apt’<br>然后apt  project(‘:apt’)</p>
+<p>生成的源代码在build/generated/source/apt下可以看到<br><img src="http://upload-images.jianshu.io/upload_images/751860-efc9f4bdf0aa21bd.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="apt生成代码的路径"><br>难点：<br>就apt本身来说没有任何难点可言，难点一在于设计模式和解耦思想的灵活应用，二在与代码生成的繁琐，你可以手动字符串拼接，当然有更高级的玩法用squareup的javapoet，用建造者的模式构建出任何你想要的源代码。<br>想详细了解可以看官网或这篇博客：<br><a href="http://brucezz.itscoder.com/articles/2016/08/06/use-apt-in-android/" target="_blank" rel="external">Android 利用 APT 技术在编译期生成代码</a></p>
+<p>优点：<br>它的强大之处无需多言，看代表框架的源码，你可以学到很多新姿势。总的一句话：它可以做任何你不想做的繁杂的工作，它可以帮你写任何你不想重复代码。懒人福利，老司机必备神技，可以提高车速，让你以任何姿势漂移。它可以生成任何源代码供你在任何地方使用，就像剑客的剑，快疾如风，无所不及。</p>
+<p>#AspectJ</p>
+<p>代表框架： Hugo(Jake Wharton)</p>
+<p>AspectJ支持编译期和加载时代码注入，在开始之前，我们先看看需要了解的词汇：<br><strong>Advice（通知）:</strong> 典型的 Advice 类型有 before、after 和 around，分别表示在目标方法执行之前、执行后和完全替代目标方法执行的代码。 </p>
+<p><strong>Joint point（连接点）:</strong> 程序中可能作为代码注入目标的特定的点和入口。</p>
+<p><strong>Pointcut（切入点）:</strong> 告诉代码注入工具，在何处注入一段特定代码的表达式。</p>
+<p><strong>Aspect（切面）:</strong> Pointcut 和 Advice 的组合看做切面。例如，在本例中通过定义一个 pointcut 和给定恰当的advice，添加一个了内存缓存的切面。</p>
+<p><strong>Weaving（织入）:</strong> 注入代码（advices）到目标位置（joint points）的过程。</p>
+<p>下面这张图简要总结了一下上述这些概念。</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/30689-55846998f4f5b4ce.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="AOP概念图"></p>
+<p>使用姿势：<br>1、建立一个android lib Module，定义一个切片，处理自定义注解，和添加切片逻辑</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-949bca6f4d271416.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="AspectJ"></p>
+<p>2、自定义一个gradle插件，使用 AspectJ 的编译器（ajc，一个java编译器的扩展),对所有受 aspect 影响的类进行织入，在 gradle 的编译 task 中增加额外配置，使之能正确编译运行。</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-72735c6584271c15.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="AspectjPlugin"></p>
+<p>3、在grade中apply plugin:com.app.plugin.AspectjPlugin</p>
+<p>生成的class文件在build/intermediates/classes下可以看到</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-61108b9120452cb0.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="Aspectj编织后的文件路径"></p>
+<p>难点：<br>AspectJ语法比较多，但是掌握几个简单常用的，就能实现绝大多数切片，完全兼容Java（纯Java语言开发，然后使用AspectJ注解，简称@AspectJ。）想详细了解可以看官网或这篇博客：<br><a href="http://blog.csdn.net/innost/article/details/49387395" target="_blank" rel="external">深入理解AndroidAOP</a></p>
+<p>优点：<br>AspectJ除了hook之外，AspectJ还可以为目标类添加变量,接口。另外，AspectJ也有抽象，继承等各种更高级的玩法。它能够在编译期间直接修改源代码生成class，强大的团战切入功能，指哪打哪，鞭辟入里。有了此神器，编程亦如庖丁解牛，游刃而有余。</p>
+<p>#Javassist</p>
+<p>代表框架：热修复框架HotFix 、Savior（InstantRun）等</p>
+<p>Javassist作用是在编译器间修改class文件，与之相似的ASM（热修复框架女娲）也有这个功能，可以让我们直接修改编译后的class二进制代码，首先我们得知道什么时候编译完成，并且我们要赶在class文件被转化为dex文件之前去修改。在Transfrom这个api出来之前，想要在项目被打包成dex之前对class进行操作，必须自定义一个Task，然后插入到predex或者dex之前，在自定义的Task中可以使用javassist或者asm对class进行操作。而Transform则更为方便，Transfrom会有他自己的执行时机，不需要我们插入到某个Task前面。Tranfrom一经注册便会自动添加到Task执行序列中，并且正好是项目被打包成dex之前。</p>
+<p>使用姿势<br>1、定义一个buildSrc module添加自定义Plugin<br><img src="http://upload-images.jianshu.io/upload_images/751860-7eaf4b6e094cad12.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="自定义Plugin"></p>
+<p>2、自定义Transform</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-afe80d7a631197d4.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="自定义Transform"></p>
+<p>3、在Transform里处理Task，通过inputs拿到一些东西，处理完毕之后就输出outputs，而下一个Task的inputs则是上一个Task的outputs。</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-51e35b3289e4c526.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="处理Task"></p>
+<p>4、使用Javassist操作字节码，添加新的逻辑或者修改原有逻辑<br><img src="http://upload-images.jianshu.io/upload_images/751860-c3493f3e1db72951.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="Javassist操作字节码"></p>
+<p>5、在grade中apply plugin:com.app.plugin.MyPlugin</p>
+<p>修改后的class文件在build/intermediates/transforms/MyTrans下可以看到</p>
+<p><img src="http://upload-images.jianshu.io/upload_images/751860-788b456e6747f8d3.png?imageMogr2/auto-orient/strip%7CimageView2/2/w/1240" alt="Javassist修改后的文件路径"></p>
+<p>难点：<br>相比ASM，Javassist对java极度友好的api更容易快速上手，难点在思想的应用，小到切片逻辑的控制，如本例中的性能log打印日志，大到宏观的热修复，插件化中对preDex的操作修改，剑客精神到了这一层级，已经是上帝视角，无所不能。</p>
+<p>优点：<br>由于Javassist可以直接操作修改编译后的字节码，直接绕过了java编译器，所以可以做很多突破限制的事情，例如，跨dex引用，解决热修复中CLASS_ISPREVERIFIED的问题。</p>
+<p>想详细了解可以看官网或这篇博客：<br><a href="http://blog.csdn.net/u010386612/article/details/51131642" target="_blank" rel="external">Android热补丁动态修复技术</a></p>
+<p><a href="https://halfstackdeveloper.github.io/2016/09/23/基于Instant-Run思想的HotFix方案实现/" target="_blank" rel="external">基于Instant Run思想的HotFix方案实现</a></p>
+<p>#AOP<br>AOP技术常用在以下方面：<br>1、日志记录：业务埋点<br>2、持久化<br>3、性能监控：性能日志<br>4、数据校验：方法的参数校验<br>5、缓存：内存缓存和持久缓存<br>6、权限检查：业务权限（如登陆，或用户等级）、系统权限（如拍照定位）<br>7、异常处理</p>
+<p>利用AOP技术将这些功能代码从业务逻辑代码中划分出来，通过对这些行为的分离，可以将它们独立到非业务逻辑。无论是日后新增，或是修改，都手到擒来易如反掌。</p>
+<p>例如新的tmvp的demo中 apt用于生成实例化工厂，替换掉(对于小项目来说)繁杂冗余的Dagger2,实现了初始化功能的aop ；aspectj 的切片主要用在缓存和日志，用注解实现方法级别的内存缓存和方法耗时日志；Javassist 这里只是做了个示例，也是通过注解实现方法耗时日志的自动打印功能，当然这些都只是AOP的九牛一毛，AOP还可以做很多事，弥补OOP的不足，把所有跨对象的横切面关注点的功能都可以提取出来用AOP去实现 ，好处显而易见，将来要改的地方永远只有一处，而不是像OOP那样牵扯很多模块很多代码很多类。</p>
+<p>当然还有更多未知的可能，需要等各位大侠来研究开发，让Aop在Android上的应用更加广泛。</p>
+<p>PS：刚发现一个歪果仁的框架 <a href="http://6thsolution.github.io/EasyMVP" target="_blank" rel="external">http://6thsolution.github.io/EasyMVP</a>  基于Clean Architecture 用了apt、aspectj、javassisit 不多说赶紧看源代码学习去了</p>
+
+          
+        
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+    <div>
+      
+    </div>
+
+
+    <footer class="post-footer">
+      
+
+      
+
+      
+      
+        <div class="post-eof"></div>
+      
+    </footer>
+  </article>
+
+
+    
+      
+
+  
+
+  
+  
+  
+
+  <article class="post post-type-normal " itemscope itemtype="http://schema.org/Article">
   <link itemprop="mainEntityOfPage" href="http://yoursite.com/2016/11/25/T-MVP：泛型深度解耦下的MVP大瘦身/">
 
   <span style="display:none" itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -576,7 +914,7 @@
         <nav class="site-state motion-element">
           <div class="site-state-item site-state-posts">
             <a href="/archives">
-              <span class="site-state-item-count">2</span>
+              <span class="site-state-item-count">4</span>
               <span class="site-state-item-name">Artikel</span>
             </a>
           </div>
